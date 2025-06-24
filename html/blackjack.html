@@ -115,91 +115,95 @@
 </footer>
 
 <script>
-	// ========= Constants =========
-	const DEFAULT_DECKS = 8; // shoe size is fixed and unchangeable
-	const IMG_BASE = "cards/"; // ← change if your images live elsewhere
-	const SUIT_OFFSETS = { S: 0, H: 39, C: 13, D: 26 }; // server‑exact
-	const SUIT_ORDER   = ["S", "H", "C", "D"];        // Spades, Hearts, Clubs, Diamonds
+	/* ----------  CONSTANTS  ---------- */
+	const DEFAULT_DECKS = 8;                     // 8-deck shoe
+	const IMG_BASE      = "cards/";              // where your 1-52 .pngs live
+	const SUIT_OFFSETS  = { S:0, H:39, C:13, D:26 };
+	const SUIT_ORDER    = ["S","H","C","D"];     // (kept for future use)
 
-	// ========= Helpers =========
-	const qs = new URLSearchParams(window.location.search);
-	const $ = id => document.getElementById(id);
+	/* ----------  HELPERS  ---------- */
+	const qs = new URLSearchParams(location.search);
+	const $  = id => document.getElementById(id);
 
-	// Prefill from query‑string if present
-	if (qs.has('client_seed'))  $('clientSeed').value  = qs.get('client_seed');
-	if (qs.has('server_seed'))  $('serverSeed').value  = qs.get('server_seed');
-	if (qs.has('nonce'))        $('nonce').value       = qs.get('nonce');
+	/* pre-fill from ?client_seed=&server_seed=&nonce= */
+	if (qs.has('client_seed')) $('clientSeed').value = qs.get('client_seed');
+	if (qs.has('server_seed')) $('serverSeed').value = qs.get('server_seed');
+	if (qs.has('nonce'))       $('nonce').value      = qs.get('nonce');
 
-	// Auto‑submit if all params are provided
-	window.addEventListener('load', () => {
-		const c = $('clientSeed').value.trim();
-		const s = $('serverSeed').value.trim();
-		const n = $('nonce').value.trim();
-		if (c && s && n !== '') {
-			$('pf-form').requestSubmit();
-		}
-	});
-
-	// ========= Build Base Deck =========
+	/* ----------  BASE DECK (ordered)  ---------- */
 	function buildBaseDeck() {
 		const deck = [];
 		for (let d = 0; d < DEFAULT_DECKS; d++) {
 			for (let rank = 1; rank <= 13; rank++) {
-				// push cards in SHCD order
 				deck.push(rank + SUIT_OFFSETS.S);
 				deck.push(rank + SUIT_OFFSETS.H);
 				deck.push(rank + SUIT_OFFSETS.C);
 				deck.push(rank + SUIT_OFFSETS.D);
 			}
 		}
-		return deck; // array of imageValue ints (1‑52 repeated)
+		return deck;
 	}
 
-	// ========= Deterministic Shuffle =========
+	/* ----------  DETERMINISTIC SHUFFLE  ---------- */
 	function shuffle(deck, clientSeed, serverSeed, nonce) {
-		const base = `${clientSeed}:${serverSeed}:${nonce}:`;
+		const base   = `${clientSeed}:${serverSeed}:${nonce}:`;
 		const sha256 = str => CryptoJS.SHA256(str).toString();
 
 		for (let i = deck.length - 1, ctr = 0n; i > 0; i--, ctr++) {
-			const hash = sha256(base + ctr); // hex string
-			const rand = BigInt('0x' + hash.slice(0, 16)); // first 8 bytes → 64‑bit unsigned
-			const j = Number(rand % BigInt(i + 1));
-			// swap deck[i] & deck[j]
-			[deck[i], deck[j]] = [deck[j], deck[i]];
+			const hash = sha256(base + ctr);
+			const rand = BigInt('0x' + hash.slice(0, 16));      // first 8 bytes
+			const j    = Number(rand % BigInt(i + 1));
+			[deck[i], deck[j]] = [deck[j], deck[i]];            // swap
 		}
 		return deck;
 	}
 
-	// ========= Render =========
+	/* ----------  RENDER HELPERS  ---------- */
 	function renderFirstN(deck, n = 30) {
 		const grid = $('deck-grid');
 		grid.innerHTML = '';
 		deck.slice(0, n).forEach(id => {
 			const img = document.createElement('img');
-			img.src = `${IMG_BASE}${id}.png`;
-			img.alt = `Card ${id}`;
+			img.src  = `${IMG_BASE}${id}.png`;
+			img.alt  = `Card ${id}`;
 			img.className = 'card-img';
 			grid.appendChild(img);
 		});
 	}
 
-	// ========= Form Handling =========
-	$('pf-form').addEventListener('submit', evt => {
-		evt.preventDefault();
+	/* ----------  CORE: recompute & paint  ---------- */
+	function renderShoe() {
+		const c = $('clientSeed').value.trim();
+		const s = $('serverSeed').value.trim();
+		const n = $('nonce').value.trim();
 
-		const clientSeed = $('clientSeed').value.trim();
-		const serverSeed = $('serverSeed').value.trim();
-		const nonce      = BigInt($('nonce').value);
-
-		if (!clientSeed || !serverSeed || nonce < 0n) return;
+		if (!c || !s || n === '') {
+			$('deck-grid').innerHTML = '';
+			$('hashOutput').textContent = '';
+			return;
+		}
 
 		const deck = buildBaseDeck();
-		shuffle(deck, clientSeed, serverSeed, nonce);
+		shuffle(deck, c, s, BigInt(n));
 		renderFirstN(deck, 30);
 
-		// Show hashed server seed (SHA‑256)
-		$('hashOutput').textContent = `SHA‑256(server_seed): ${CryptoJS.SHA256(serverSeed).toString()}`;
+		$('hashOutput').textContent =
+				`SHA-256(server_seed): ${CryptoJS.SHA256(s).toString()}`;
+	}
+
+	/* ----------  EVENT WIRING  ---------- */
+	$('pf-form').addEventListener('submit', e => {
+		e.preventDefault();
+		renderShoe();
 	});
+
+	/* live-update when any field changes */
+	['clientSeed', 'serverSeed', 'nonce'].forEach(id =>
+			$(id).addEventListener('input', renderShoe)
+	);
+
+	/* run once on load (handles query-string prefill) */
+	window.addEventListener('load', renderShoe);
 </script>
 </body>
 </html>
