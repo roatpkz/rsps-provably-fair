@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Roat Pkz - Provably-Fair Flower Poker Verifier</title>
+
+	<!-- ▸ Crypto-JS SHA-256 (inline, offline-safe) -->
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"
+			crossorigin="anonymous"></script>
+
+	<style>
+		:root{
+			--tile:60px;
+			--gap:6px;
+			--batch-gap:24px;
+		}
+		*{box-sizing:border-box;margin:0;padding:0}
+		body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;
+			background:#121212;color:#eee;padding:1.25rem}
+		h1{text-align:center;font-size:1.5rem;margin-bottom:1rem}
+		form{
+			display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+			gap:var(--gap);align-items:end;margin-bottom:1.25rem
+		}
+		label{display:flex;flex-direction:column;font-size:.875rem}
+		input{
+			padding:.55rem;border:1px solid #555;border-radius:6px;
+			background:#1e1e1e;color:#eee
+		}
+		button{
+			padding:.75rem 1.25rem;border:none;border-radius:6px;
+			background:#3b82f6;color:#fff;font-weight:600;cursor:pointer;
+			transition:background .2s
+		}
+		button:hover{background:#2563eb}
+		.scroll-row{
+			overflow-x:auto;padding-bottom:.5rem;margin-bottom:1rem;
+			white-space:nowrap;border-bottom:1px solid #333
+		}
+		.batch{
+			display:inline-block;margin-right:var(--batch-gap);text-align:center
+		}
+		.tile{
+			width:var(--tile);height:var(--tile);margin-right:var(--gap);
+			vertical-align:top;border-radius:4px;box-shadow:0 0 4px rgba(0,0,0,.6)
+		}
+		.hand-label{
+			display:block;margin-top:.35rem;font-size:.75rem
+		}
+		/* — colours for the result text — */
+		.win  {color:#22c55e}   /* green */
+		.loss {color:#ef4444}   /* red   */
+		.draw {color:#facc15}   /* yellow*/
+		.post {color:#888}      /* grey  */
+
+		#hashOutput{font-family:monospace;text-align:center;margin:1rem 0}
+		footer{font-size:.75rem;text-align:center;color:#888;margin-top:1.5rem}
+		footer a{color:#3b82f6;text-decoration:none}
+		footer a:hover{text-decoration:underline}
+	</style>
+</head>
+<body>
+<h1>Roat Pkz - Provably-Fair Flower Poker Verifier</h1>
+
+<form id="pf-form" autocomplete="off">
+	<label>Server Seed (revealed)
+		<input id="serverSeed" required>
+	</label>
+	<label>Player 1 Seed
+		<input id="p1Seed" required>
+	</label>
+	<label>Player 2 Seed
+		<input id="p2Seed" required>
+	</label>
+	<button type="submit">Show 300 Flowers (60 games)</button>
+</form>
+
+<p id="hashOutput"></p>
+
+<h3>Player 1 Flowers</h3>
+<div id="rowP1" class="scroll-row"></div>
+
+<h3>Player 2 Flowers</h3>
+<div id="rowP2" class="scroll-row"></div>
+
+<footer>
+	Images are referenced by their <code>colour</code> filename in
+	<code>media/flowers/</code> (e.g.&nbsp;<code>red.png</code>,
+	<code>black.png</code>).<br><br>
+
+	The verifier shows <strong>60 games&nbsp;×&nbsp;5 flowers</strong>
+	(300 draws) in the exact order they were dealt on-chain.<br>
+	If you want fewer or more, change
+	<code>MAX_GAMES&nbsp;=&nbsp;60</code> and
+	<code>FLOWERS_PER_GAME&nbsp;=&nbsp;5</code> at the top of the
+	script.<br><br>
+
+	<p><strong>How the flower draws work:</strong> We create a
+		<em><u>combined seed</u></em> by concatenating<br>
+		<code>player1_seed</code>,&nbsp;<code>player2_seed</code>, and
+		<code>server_seed</code>. Each successive counter value
+		(<code>:0</code>, <code>:1</code>, <code>:2</code> …) is hashed
+		with SHA-256. The first&nbsp;64&nbsp;bits of each hash are mapped
+		to a flower colour using the original 1-in-500 rare-flower rules.
+		Anyone holding the three seeds can reproduce the same sequence
+		offline-provably fair.</p>	<hr style="border:none;border-top:1px solid #333;margin:1rem 0;" />
+	<p><strong>Open‑source&nbsp;license:</strong> MIT. You may use, modify, and redistribute this verifier free&nbsp;of&nbsp;charge in any commercial or non‑commercial game server.</p>
+	<p>View the code on <a href="https://github.com/roatpkz/rsps-provably-fair/" target="_blank" rel="noopener">GitHub</a>.</p>
+</footer>
+
+<script>
+	/* ───────────── CONSTANTS ───────────── */
+	const IMG_BASE = 'media/flowers/';
+	const COMMON   = ['red','blue','yellow','purple','orange','mixed','assorted'];
+
+	/* ─────── URL pre-fill helpers ─────── */
+	const qs = new URLSearchParams(location.search);
+	const $  = id => document.getElementById(id);
+	['server_seed','player1_seed','player2_seed'].forEach((key,i) => {
+		if (qs.has(key)) [$('serverSeed'),$('p1Seed'),$('p2Seed')][i].value = qs.get(key);
+	});
+
+	/* ─────── SHA-256 via Crypto-JS ─────── */
+	const sha256  = s  => CryptoJS.SHA256(s).toString();
+	const first64 = hx => BigInt('0x' + hx.slice(0,16)) & 0x7fffffffffffffffn;
+
+	/* ─────── Flower generator (1 : 500) ─────── */
+	function flowerAt(p1,p2,serv,cnt){
+		const roll = Number(first64(sha256(`${p1}:${p2}:${serv}:${cnt}`)) % 500n) + 1;
+		if (roll === 1) return 'black';
+		if (roll === 2) return 'white';
+		return COMMON[(roll - 3) % COMMON.length];
+	}
+
+	/* ─────── Hand evaluation ─────── */
+	function handResult(flowers){
+		const counts = {};
+		let blk = false, wht = false;
+
+		for (const f of flowers){
+			if (f === 'black')  { blk = true; continue; }
+			if (f === 'white')  { wht = true; continue; }
+			counts[f] = (counts[f] || 0) + 1;
+		}
+
+		if (blk) return {r:0,n:'BLACK FLOWER'};
+		if (wht) return {r:0,n:'WHITE FLOWER'};
+
+		let pairs = 0, three = false;
+		for (const v of Object.values(counts)){
+			if (v === 5) return {r:6,n:'5 OF A KIND'};
+			if (v === 4) return {r:5,n:'4 OF A KIND'};
+			if (v === 3) three = true;
+			if (v === 2) pairs++;
+		}
+		if (three && pairs) return {r:4,n:'FULL HOUSE'};
+		if (three)          return {r:3,n:'3 OF A KIND'};
+		if (pairs === 2)    return {r:2,n:'TWO PAIRS'};
+		if (pairs === 1)    return {r:1,n:'ONE PAIR'};
+		return {r:0,n:'BUST'};
+	}
+
+	const isDraw = (h1,h2) =>
+			h1.r === h2.r ||
+			h1.n === 'BLACK FLOWER' || h1.n === 'WHITE FLOWER' ||
+			h2.n === 'BLACK FLOWER' || h2.n === 'WHITE FLOWER';
+
+	/* ────────── Main refresh ────────── */
+	function update(pushURL){
+		const serv = $('serverSeed').value.trim(),
+				p1   = $('p1Seed' ).value.trim(),
+				p2   = $('p2Seed' ).value.trim();
+		if (!serv || !p1 || !p2) return;
+
+		$('hashOutput').textContent = 'SHA-256(server_seed): ' + sha256(serv);
+
+		const rowP1 = $('rowP1'), rowP2 = $('rowP2');
+		rowP1.innerHTML = rowP2.innerHTML = '';
+
+		/* pre-analyse all 60 games */
+		let firstDecider = -1, winner = 0;        // 0: none, 1: p1, 2: p2
+		const evals = [];
+
+		for (let g = 0; g < 60; g++){
+			const f1 = Array.from({length:5},(_,i)=>flowerAt(p1,p2,serv,g*10+i*2  ));
+			const f2 = Array.from({length:5},(_,i)=>flowerAt(p1,p2,serv,g*10+i*2+1));
+			const h1 = handResult(f1), h2 = handResult(f2);
+			evals.push([f1,f2,h1,h2]);
+
+			if (firstDecider === -1 && !isDraw(h1,h2)){
+				firstDecider = g;
+				winner       = h1.r > h2.r ? 1 : 2;
+			}
+		}
+
+		for (let g = 0; g < 60; g++){
+			const [f1,f2,h1,h2] = evals[g];
+
+			/* build image rows */
+			const b1 = document.createElement('div'),
+					b2 = document.createElement('div');
+			b1.className = b2.className = 'batch';
+
+			for (let i = 0; i < 5; i++){
+				const img1 = new Image(), img2 = new Image();
+				img1.src = IMG_BASE + f1[i] + '.png'; img1.alt = f1[i];
+				img2.src = IMG_BASE + f2[i] + '.png'; img2.alt = f2[i];
+				img1.className = img2.className = 'tile';
+				b1.appendChild(img1); b2.appendChild(img2);
+			}
+
+			/* hand labels */
+			const l1 = document.createElement('span'),
+					l2 = document.createElement('span');
+			l1.textContent = `Game ${g+1} – ${h1.n}`;
+			l2.textContent = `Game ${g+1} – ${h2.n}`;
+			l1.className = l2.className = 'hand-label';
+
+			/* colouring */
+			if (firstDecider === -1){                       // whole match draw
+				l1.classList.add('draw'); l2.classList.add('draw');
+			}else if (g < firstDecider){                    // before decider
+				l1.classList.add('draw'); l2.classList.add('draw');
+			}else if (g === firstDecider){                  // decisive hand
+				if (winner === 1){
+					l1.classList.add('win');  l2.classList.add('loss');
+				}else{
+					l1.classList.add('loss'); l2.classList.add('win');
+				}
+			}else{                                          // after decider
+				l1.classList.add('post'); l2.classList.add('post');
+			}
+
+			b1.appendChild(l1); b2.appendChild(l2);
+			rowP1.appendChild(b1); rowP2.appendChild(b2);
+		}
+
+		if (pushURL){
+			const params = new URLSearchParams({
+				server_seed: serv, player1_seed: p1, player2_seed: p2
+			});
+			history.replaceState(null,'','?'+params.toString());
+		}
+	}
+
+	/* auto-refresh when any field changes */
+	$('pf-form').addEventListener('input', () => update(false));
+
+	/* submit button pushes URL & scrolls to top */
+	$('pf-form').addEventListener('submit', e => {
+		e.preventDefault(); update(true);
+	});
+
+	/* initial render (if params present) */
+	window.addEventListener('load', () => update(false));
+</script>
+</body>
+</html>
