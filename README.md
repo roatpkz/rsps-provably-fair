@@ -105,6 +105,13 @@ Flower[] firstHandP2 = ProvablyFairFlowerPoker.firstNPlayer2(p1, p2, srv, 5);
 * **Nonces** – used when the same two seeds produce multiple rounds (e.g. successive Blackjack hands).
 
 ---
+## 📝 List of RuneScape Private Servers with Provably Fair Gambling
+
+- **Roat Pkz [Added on July 1, 2025]** – [https://roatpkz.com](https://roatpkz.com)
+
+---
+
+If you’ve implemented provably fair gambling on your server, please email **admin@roatpkz.com** with details so we can add your server to this list.
 
 ## 🪪 License
 
