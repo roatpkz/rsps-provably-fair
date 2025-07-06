@@ -9,7 +9,7 @@ material = clientSeed + ":" + serverSeed [+ ":" + nonce]
 hash     = SHA‑256(material)
 ```
 
-The hash (or a slice of it) is turned into an unsigned integer and mapped to a card, roll, mine, or flower according to the game‑specific rules below.
+The hash (or a slice of it) is turned into an unsigned integer and mapped to a card, roll, mine, boxing, or flower according to the game‑specific rules below.
 
 > **Quick adoption:** The heavy lifting here is already done, just import the helpers, implement them to your wager logic, and you’re provably fair. In practice, most RSPS owners can ship a verifiable Flower-Poker / Dice / Mines / Blackjack release in a single afternoon with this release, giving players cryptographic proof that every deal, roll, or plant is 100% tamper-free.
 ---
@@ -98,7 +98,7 @@ int player2Hit = hitForPlayer(2, 0, p1, p2, srv);
 2. **Post-deal : disclose the raw server seed for audit**  
    - When the hand ends, reveal `server_seed_plain`.  
    - Immediately rotate to a brand-new `server_seed_plain` and publish its hash for the next round.
-   - If it's not player vs player (Flower Poker), then increase the nonce after every game.
+   - If it's not player vs player (Flower Poker or Boxing), then increase the nonce after every game.
 
 3. **Self-audit guide for players**  
    - Copy `client_seed(s)` + `server_seed_plain` + `nonce` from the game log.  
