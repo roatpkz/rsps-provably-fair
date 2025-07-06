@@ -22,6 +22,7 @@ The hash (or a slice of it) is turned into an unsigned integer and mapped to a c
 | `ProvablyFairDice` | 0.00 – 100 % roll | 0 … 10 000 → 0.00 – 100.00 % | `clientSeed`, `serverSeed`, **`nonce`** | [dice.html](https://cdn.roatpkz.com/provably_fair/dice.html) |
 | `ProvablyFairMines` | 5 × 5 Mines grid | BitSet (25) | `clientSeed`, `serverSeed`, **`nonce`**, `mineCount` | [mines.html](https://cdn.roatpkz.com/provably_fair/mines.html) |
 | `ProvablyFairFlowerPoker` | Flower Poker | Infinite flower stream | `player1Seed`, `player2Seed`, `serverSeed` | [flowerpoker.html](https://cdn.roatpkz.com/provably_fair/flowerpoker.html) |
+| `ProvablyFairBoxing` | Boxing | Infinite 0-16 hit stream | `player1Seed`, `player2Seed`, `serverSeed`, **`hit #`** | [boxing.html](https://cdn.roatpkz.com/provably_fair/boxing.html) |
 
 *All classes live in `server.util.provably_fair` and have no third‑party dependencies.*
 
@@ -72,6 +73,16 @@ String srv = "f3d6...";
 
 Flower firstFlowerP1 = ProvablyFairFlowerPoker.flowerAtPlayer1(p1, p2, srv, 0);
 Flower[] firstHandP2 = ProvablyFairFlowerPoker.firstNPlayer2(p1, p2, srv, 5);
+```
+
+### Boxing – deal damage from 0-16
+```java
+String p1 = "smoothieSeed";
+String p2 = "maxSeed";
+String srv = "jgr94...";
+
+int player1Hit = hitForPlayer(1, 0, p1, p2, srv);
+int player2Hit = hitForPlayer(2, 0, p1, p2, srv);
 ```
 
 ---
