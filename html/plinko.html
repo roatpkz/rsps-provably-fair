@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Roat Pkz – Provably Fair&nbsp;Plinko&nbsp;Verifier</title>
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+
+	<style>
+		:root{
+			--gap:8px;
+		}
+		*{box-sizing:border-box}
+		body{
+			margin:0;
+			padding:1rem;
+			font-family:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;
+			background:#121212;
+			color:#eee;
+		}
+		h1{font-size:1.5rem;text-align:center;margin-bottom:1rem}
+		form{
+			display:grid;
+			grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+			gap:var(--gap);
+			align-items:end;
+			margin-bottom:1.5rem;
+		}
+		label{display:flex;flex-direction:column;font-size:.875rem}
+		input[type="text"],input[type="number"],select{
+			padding:.5rem;border:1px solid #555;border-radius:6px;background:#1e1e1e;color:#eee;font:inherit
+		}
+		input[type="number"]::-webkit-inner-spin-button{opacity:.5}
+		button{
+			padding:.75rem 1.25rem;border:none;border-radius:6px;background:#3b82f6;
+			color:#fff;font-weight:600;cursor:pointer;transition:background .2s
+		}
+		button:hover{background:#2563eb}
+		#hashOutput,#digestOutput{text-align:center;margin:0 0 .5rem;font-family:monospace;overflow-wrap:anywhere}
+		#digestOutput .used{color:#ffc400;font-weight:700}
+		#bits{display:flex;flex-wrap:wrap;justify-content:center;gap:3px 11px;margin:1rem 0 .5rem}
+		.byte{display:flex;gap:3px}
+		.bit{
+			width:30px;padding:3px 0;border-radius:4px;background:#1e1e1e;border:1px solid #333;
+			text-align:center;font-family:monospace;font-size:.8rem;line-height:1.25;color:#555
+		}
+		.bit b{display:block;font-size:.95rem}
+		.bit.right{border-color:#ffc400;color:#ffc400}
+		.bit.left{border-color:#7da2c9;color:#9cc0e6}
+		#summary{text-align:center;margin:.75rem 0 1rem;font-size:1.05rem}
+		#summary strong{color:#ffc400}
+		#summary .note{display:block;margin-top:.35rem;font-size:.8rem;color:#888}
+		#board{display:flex;justify-content:center}
+		#board svg{width:100%;max-width:640px;height:auto}
+		footer{
+			margin-top:1.5rem;text-align:center;font-size:.75rem;color:#888
+		}
+		footer a{color:#3b82f6;text-decoration:none}
+		footer a:hover{text-decoration:underline}
+	</style>
+</head>
+<body>
+
+<h1>Roat Pkz – Provably Fair Plinko Verifier</h1>
+
+<form id="pf-form" autocomplete="off">
+	<label>Client Seed <input id="clientSeed" type="text" required></label>
+	<label>Server Seed (revealed) <input id="serverSeed" type="text" required></label>
+	<label>Nonce (game #) <input id="nonce" type="number" min="1" step="1" value="1" required></label>
+	<label>Rows
+		<select id="rows">
+			<option>8</option><option>9</option><option>10</option><option>11</option><option>12</option>
+			<option>13</option><option>14</option><option>15</option><option selected>16</option>
+		</select>
+	</label>
+	<label>Risk
+		<select id="risk">
+			<option value="low">Low</option><option value="medium" selected>Medium</option>
+			<option value="high">High</option><option value="expert">Expert</option>
+		</select>
+	</label>
+	<button type="submit">Reveal Ball</button>
+</form>
+
+<p id="hashOutput"></p>
+<p id="digestOutput"></p>
+<div id="bits"></div>
+<p id="summary"></p>
+<div id="board"></div>
+
+<footer>
+	This page hashes <code>client_seed + ":" + server_seed + ":" + nonce</code> with SHA-256 and reads one bit of the hash per row of pegs, starting at the most significant bit of the first byte: a <code>1</code> sends the ball right, a <code>0</code> sends it left. The slot is the number of times it went right, and the multiplier comes from the game's pay table for that risk and number of rows. It is the same algorithm as the Roat Pkz server.<br><br>
+	Each ball you drop uses the next nonce, starting at 1 for a new server seed, so the Verify button in the game opens this page on your last ball. To check an earlier ball, change the nonce, and set the rows and the risk to what the board had when that ball dropped. A win is paid at the slot's multiplier unless that would pass the max win per ball shown in the game's Rules box.<br><br>
+	This HTML page is fully self-contained and works entirely offline – it never communicates with any external server.
+	<hr style="border:none;border-top:1px solid #333;margin:1rem 0;">
+	<p><strong>Open‑source&nbsp;license:</strong> MIT. You may use, modify, and redistribute this verifier free&nbsp;of&nbsp;charge in any commercial or non‑commercial game server.</p>
+	<p>View the code on <a href="https://github.com/roatpkz/rsps-provably-fair/" target="_blank" rel="noopener">GitHub</a>.</p>
+</footer>
+
+<script>
+	/* core:start */
+	/* ──────────────────────────  The game's numbers  ────────────────────────── */
+	const MIN_ROWS = 8, MAX_ROWS = 16;
+	const RISKS = ['low', 'medium', 'high', 'expert'];
+
+	// The pay tables in tenths (5 is 0.5x, 98800 is 9,880x), as [risk][rows - 8][slot] from the far left to the far right
+	const MULTIPLIER_TENTHS = {
+		low: [
+			[57, 19, 11, 10, 5, 10, 11, 19, 57],
+			[57, 21, 15, 10, 7, 7, 10, 15, 21, 57],
+			[90, 29, 13, 11, 10, 5, 10, 11, 13, 29, 90],
+			[85, 30, 17, 13, 10, 7, 7, 10, 13, 17, 30, 85],
+			[100, 31, 16, 13, 11, 10, 5, 10, 11, 13, 16, 31, 100],
+			[80, 42, 28, 18, 12, 9, 7, 7, 9, 12, 18, 28, 42, 80],
+			[70, 40, 21, 14, 12, 11, 10, 5, 10, 11, 12, 14, 21, 40, 70],
+			[150, 78, 32, 19, 14, 11, 10, 7, 7, 10, 11, 14, 19, 32, 78, 150],
+			[160, 88, 20, 16, 14, 11, 11, 10, 5, 10, 11, 11, 14, 16, 20, 88, 160]
+		],
+		medium: [
+			[130, 32, 12, 7, 4, 7, 12, 32, 130],
+			[180, 42, 18, 8, 5, 5, 8, 18, 42, 180],
+			[220, 48, 22, 13, 6, 4, 6, 13, 22, 48, 220],
+			[240, 60, 28, 18, 7, 5, 5, 7, 18, 28, 60, 240],
+			[340, 110, 40, 19, 11, 6, 3, 6, 11, 19, 40, 110, 340],
+			[430, 120, 60, 29, 13, 7, 4, 4, 7, 13, 29, 60, 120, 430],
+			[580, 150, 69, 38, 19, 10, 5, 2, 5, 10, 19, 38, 69, 150, 580],
+			[880, 180, 110, 50, 31, 12, 5, 3, 3, 5, 12, 31, 50, 110, 180, 880],
+			[1080, 400, 99, 48, 29, 15, 10, 5, 3, 5, 10, 15, 29, 48, 99, 400, 1080]
+		],
+		high: [
+			[290, 38, 15, 3, 2, 3, 15, 38, 290],
+			[420, 68, 20, 6, 2, 2, 6, 20, 68, 420],
+			[760, 99, 29, 9, 3, 2, 3, 9, 29, 99, 760],
+			[1190, 140, 50, 14, 4, 2, 2, 4, 14, 50, 140, 1190],
+			[1690, 240, 81, 19, 7, 2, 2, 2, 7, 19, 81, 240, 1690],
+			[2570, 360, 110, 39, 10, 2, 2, 2, 2, 10, 39, 110, 360, 2570],
+			[4180, 530, 180, 49, 19, 3, 2, 2, 2, 3, 19, 49, 180, 530, 4180],
+			[6160, 820, 260, 79, 30, 5, 2, 2, 2, 2, 5, 30, 79, 260, 820, 6160],
+			[9900, 1290, 260, 88, 39, 20, 2, 2, 2, 2, 2, 20, 39, 88, 260, 1290, 9900]
+		],
+		expert: [
+			[500, 44, 11, 1, 1, 1, 11, 44, 500],
+			[990, 76, 15, 2, 1, 1, 2, 15, 76, 990],
+			[1970, 100, 22, 6, 1, 1, 1, 6, 22, 100, 1970],
+			[3190, 160, 39, 11, 2, 1, 1, 2, 11, 39, 160, 3190],
+			[6130, 300, 61, 14, 4, 1, 1, 1, 4, 14, 61, 300, 6130],
+			[9990, 510, 98, 30, 6, 1, 1, 1, 1, 6, 30, 98, 510, 9990],
+			[23500, 780, 160, 29, 12, 2, 1, 1, 1, 2, 12, 29, 160, 780, 23500],
+			[49400, 1240, 230, 58, 18, 2, 1, 1, 1, 1, 2, 18, 58, 230, 1240, 49400],
+			[98800, 2140, 250, 69, 25, 11, 1, 1, 1, 1, 1, 11, 25, 69, 250, 2140, 98800]
+		]
+	};
+
+	/* ─────────────────────────────  SHA-256  ─────────────────────────────
+	   Written out here so that the page needs no library and no network. */
+	const SHA256_K = [
+		0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+		0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+		0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+		0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+		0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+		0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+		0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+		0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+	];
+	const SHA256_H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+	const rotateRight = (value, bits) => (value >>> bits) | (value << (32 - bits));
+
+	// The SHA-256 digest of a text (as UTF-8), in lowercase hex
+	function sha256Hex(text) {
+		const bytes = new TextEncoder().encode(text);
+		const paddedLength = ((bytes.length + 9 + 63) >> 6) << 6;
+		const padded = new Uint8Array(paddedLength);
+		padded.set(bytes);
+		padded[bytes.length] = 0x80;
+		const view = new DataView(padded.buffer);
+		view.setUint32(paddedLength - 8, Math.floor(bytes.length / 0x20000000));
+		view.setUint32(paddedLength - 4, (bytes.length * 8) >>> 0);
+
+		const state = SHA256_H.slice();
+		const words = new Int32Array(64);
+		for (let offset = 0; offset < paddedLength; offset += 64) {
+			for (let index = 0; index < 16; index++) {
+				words[index] = view.getInt32(offset + (index * 4));
+			}
+			for (let index = 16; index < 64; index++) {
+				const before15 = words[index - 15], before2 = words[index - 2];
+				const sigma0 = rotateRight(before15, 7) ^ rotateRight(before15, 18) ^ (before15 >>> 3);
+				const sigma1 = rotateRight(before2, 17) ^ rotateRight(before2, 19) ^ (before2 >>> 10);
+				words[index] = (words[index - 16] + sigma0 + words[index - 7] + sigma1) | 0;
+			}
+			let [a, b, c, d, e, f, g, h] = state;
+			for (let index = 0; index < 64; index++) {
+				const sum1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25);
+				const choice = (e & f) ^ (~e & g);
+				const temp1 = (h + sum1 + choice + SHA256_K[index] + words[index]) | 0;
+				const sum0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22);
+				const majority = (a & b) ^ (a & c) ^ (b & c);
+				const temp2 = (sum0 + majority) | 0;
+				h = g; g = f; f = e; e = (d + temp1) | 0;
+				d = c; c = b; b = a; a = (temp1 + temp2) | 0;
+			}
+			[a, b, c, d, e, f, g, h].forEach((value, index) => { state[index] = (state[index] + value) | 0; });
+		}
+		return state.map(value => (value >>> 0).toString(16).padStart(8, '0')).join('');
+	}
+
+	/* ─────────────────────  Core: a provably-fair ball  ─────────────────────
+	   The same steps as the server-side Java implementation (ProvablyFairPlinko). */
+
+	// The decision at a row: bit `row` of the digest, the most significant bit of the first byte first. 1 = right
+	function digestBit(digestHex, row) {
+		const byte = parseInt(digestHex.substr((row >> 3) * 2, 2), 16);
+		return (byte >>> (7 - (row & 7))) & 1;
+	}
+
+	// One ball: its digest, its path (one 0 or 1 per row), the slot it lands in and what that slot pays, in tenths
+	function dropBall(clientSeed, serverSeed, nonce, rows, risk) {
+		if (rows < MIN_ROWS || rows > MAX_ROWS) throw new RangeError('rows 8-16');
+		if (!RISKS.includes(risk)) throw new RangeError('risk low, medium, high or expert');
+
+		const digest = sha256Hex(clientSeed + ':' + serverSeed + ':' + nonce);
+		const path = [];
+		for (let row = 0; row < rows; row++) {
+			path.push(digestBit(digest, row));
+		}
+		const slot = path.reduce((rights, bit) => rights + bit, 0);   // 0 is the far left
+		return { digest, path, slot, multiplierInTenths: MULTIPLIER_TENTHS[risk][rows - MIN_ROWS][slot] };
+	}
+
+	// A multiplier in full: 26, 0.2, 9880
+	function multiplierText(tenths) {
+		return tenths % 10 === 0 ? String(tenths / 10) : Math.floor(tenths / 10) + '.' + (tenths % 10);
+	}
+
+	// A multiplier as the game writes it on a slot: shortened from 1,000x up, cut and never rounded up (9,880x is 9.8k)
+	function plateText(tenths) {
+		const whole = Math.floor(tenths / 10);
+		if (whole < 1000) return multiplierText(tenths);
+		const hundreds = Math.floor((whole % 1000) / 100);
+		return Math.floor(whole / 1000) + (hundreds ? '.' + hundreds : '') + 'k';
+	}
+	/* core:end */
+
+	/* ─────────────────────  Tiny helpers / shorthands  ───────────────────── */
+	const $  = id => document.getElementById(id);
+	const qs = new URLSearchParams(location.search);
+
+	/* ───────────────────────────  Prefill form  ─────────────────────────── */
+	if (qs.has('client_seed')) $('clientSeed').value = qs.get('client_seed');
+	if (qs.has('server_seed')) $('serverSeed').value = qs.get('server_seed');
+	if (qs.has('nonce') && /^\d+$/.test(qs.get('nonce'))) $('nonce').value = qs.get('nonce');
+	if (qs.has('rows') && Number(qs.get('rows')) >= MIN_ROWS && Number(qs.get('rows')) <= MAX_ROWS) $('rows').value = String(Number(qs.get('rows')));
+	if (qs.has('risk') && RISKS.includes(qs.get('risk').toLowerCase())) $('risk').value = qs.get('risk').toLowerCase();
+
+	/* ──────────────────────────  Rendering  ────────────────────────── */
+	// The plates' colours as in the game, from the centre (yellow) to the edges (red)
+	const PLATE_COLORS = ['#ffc400', '#ffaa00', '#ff9000', '#ff7400', '#ff5a00', '#ff4008', '#f82818', '#e81428', '#d40038'];
+
+	// How bright a colour is once it lies on the page at this opacity, from 0 (black) to 1 (white)
+	function luminance(hexColor, opacity) {
+		const channel = shift => {
+			const value = ((((parseInt(hexColor.slice(1), 16) >> shift) & 0xff) * opacity) + (0x12 * (1 - opacity))) / 255;
+			return value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+		};
+		return (0.2126 * channel(16)) + (0.7152 * channel(8)) + (0.0722 * channel(0));
+	}
+
+	// The digest, with the hex digits that hold the bits in use picked out
+	function drawDigest(ball, rows) {
+		const usedDigits = Math.ceil(rows / 4);
+		const output = $('digestOutput');
+		output.textContent = 'SHA-256(client_seed:server_seed:nonce): ';
+		const used = document.createElement('span');
+		used.className = 'used';
+		used.textContent = ball.digest.slice(0, usedDigits);
+		output.append(used, ball.digest.slice(usedDigits));
+	}
+
+	// The first sixteen bits of the digest in their two bytes, one box per row: the ones this board uses say which way the ball went
+	function drawBits(ball, rows) {
+		const bits = $('bits');
+		bits.textContent = '';
+		let byteGroup = null;
+		for (let row = 0; row < MAX_ROWS; row++) {
+			if (row % 8 === 0) {
+				byteGroup = document.createElement('div');
+				byteGroup.className = 'byte';
+				bits.append(byteGroup);
+			}
+			const bit = digestBit(ball.digest, row);
+			const box = document.createElement('div');
+			box.className = 'bit' + (row < rows ? (bit ? ' right' : ' left') : '');
+			const value = document.createElement('b');
+			value.textContent = bit;
+			box.append(value, row < rows ? (bit ? 'R' : 'L') : '–');
+			box.title = row < rows ? 'Row ' + (row + 1) + ': ' + (bit ? 'right' : 'left') : 'Not used on ' + rows + ' rows';
+			byteGroup.append(box);
+		}
+	}
+
+	// The board: the pegs, the way the ball went, and the slots with what they pay
+	function drawBoard(ball, rows, risk) {
+		const width = 560, centerX = width / 2, top = 34;
+		const pitch = 476 / (rows + 1), rowGap = Math.min(30, 330 / rows);
+		const pegRadius = Math.max(2.5, pitch * 0.09), ballRadius = Math.max(4, pitch * 0.17);
+		const pegY = row => top + (row * rowGap);
+		const platesY = pegY(rows - 1) + (rowGap * 0.75) + 6, plateHeight = 26;
+		const multipliers = MULTIPLIER_TENTHS[risk][rows - MIN_ROWS];
+		const parts = [];
+
+		// Where the ball is as it reaches each row, and the peg it hits there
+		const points = [];
+		const hitPegs = new Set();
+		let rights = 0;
+		for (let row = 0; row < rows; row++) {
+			points.push([centerX + ((rights - (row / 2)) * pitch), pegY(row) - pegRadius - ballRadius]);
+			hitPegs.add(row + ':' + (rights + 1));
+			rights += ball.path[row];
+		}
+		const slotX = centerX + ((ball.slot - (rows / 2)) * pitch);
+		points.push([slotX, platesY - ballRadius + 4]);
+
+		// Row r has r + 3 pegs centred on the board
+		for (let row = 0; row < rows; row++) {
+			for (let peg = 0; peg < row + 3; peg++) {
+				const x = centerX + ((peg - ((row + 2) / 2)) * pitch);
+				const isHit = hitPegs.has(row + ':' + peg);
+				parts.push(`<circle cx="${x.toFixed(1)}" cy="${pegY(row).toFixed(1)}" r="${pegRadius.toFixed(1)}" fill="${isHit ? '#ffffff' : '#6b747c'}"/>`);
+			}
+		}
+
+		// The slots, the one the ball lands in outlined
+		const labelSize = Math.max(8, Math.min(13, pitch * 0.4));
+		multipliers.forEach((tenths, slot) => {
+			const x = centerX + ((slot - (rows / 2)) * pitch);
+			const color = PLATE_COLORS[Math.round((Math.abs(slot - (rows / 2)) / (rows / 2)) * 8)];
+			const isLanding = slot === ball.slot;
+			const plateOpacity = isLanding ? 1 : 0.55;
+
+			// Dark text on the bright plates and white on the dark ones, whichever is easier to read
+			const textColor = luminance(color, plateOpacity) > 0.19 ? '#1a1200' : '#ffffff';
+			parts.push(`<rect x="${(x - (pitch / 2) + 1).toFixed(1)}" y="${platesY.toFixed(1)}" width="${(pitch - 2).toFixed(1)}" height="${plateHeight}" rx="3" fill="${color}" opacity="${plateOpacity}" stroke="${isLanding ? '#ffffff' : 'none'}" stroke-width="2"/>`);
+			parts.push(`<text x="${x.toFixed(1)}" y="${(platesY + (plateHeight / 2) + (labelSize * 0.36)).toFixed(1)}" font-size="${labelSize.toFixed(1)}" font-weight="700" text-anchor="middle" fill="${textColor}">${plateText(tenths)}</text>`);
+		});
+
+		// The way the ball went: dropped onto the first peg, then one hop per row, each a third of a row high, and the ball in its slot
+		let trail = `M${points[0][0].toFixed(1)},${Math.max(2, points[0][1] - 16).toFixed(1)} L${points[0][0].toFixed(1)},${points[0][1].toFixed(1)}`;
+		for (let index = 1; index < points.length; index++) {
+			const from = points[index - 1], to = points[index];
+			trail += ` Q${((from[0] + to[0]) / 2).toFixed(1)},${(from[1] - rowGap).toFixed(1)} ${to[0].toFixed(1)},${to[1].toFixed(1)}`;
+		}
+		parts.push(`<path d="${trail}" fill="none" stroke="#ffc400" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>`);
+		parts.push(`<circle cx="${slotX.toFixed(1)}" cy="${(platesY - ballRadius + 4).toFixed(1)}" r="${ballRadius.toFixed(1)}" fill="#ffd21a" stroke="#723600" stroke-width="1.5"/>`);
+
+		const height = platesY + plateHeight + 10;
+		$('board').innerHTML = `<svg viewBox="0 0 ${width} ${height.toFixed(0)}" role="img" aria-label="The ball's path down ${rows} rows into slot ${ball.slot}">${parts.join('')}</svg>`;
+	}
+
+	// Clear everything under the form
+	function clearResult(note) {
+		$('digestOutput').textContent = '';
+		$('bits').textContent = '';
+		$('board').textContent = '';
+		$('summary').textContent = note || '';
+	}
+
+	/* ─────────────────────  Single update entry-point  ───────────────────── */
+	function update() {
+		const clientSeed = $('clientSeed').value.trim();
+		const serverSeed = $('serverSeed').value.trim();
+		const nonceText  = $('nonce').value.trim();
+		const rows       = Number($('rows').value);
+		const risk       = $('risk').value;
+
+		// basic validation
+		if (!clientSeed || !serverSeed || !/^\d+$/.test(nonceText)) {
+			$('hashOutput').textContent = '';
+			clearResult();
+			return;   // ignore until user has entered valid data
+		}
+		$('hashOutput').textContent = 'SHA-256(server_seed): ' + sha256Hex(serverSeed);
+
+		// The first ball of a server seed is game #1
+		const nonce = Number(nonceText);
+		if (nonce < 1) {
+			clearResult('No ball has been dropped with this server seed yet: the first one is game #1.');
+			return;
+		}
+
+		const ball = dropBall(clientSeed, serverSeed, nonce, rows, risk);
+		drawDigest(ball, rows);
+		drawBits(ball, rows);
+		drawBoard(ball, rows, risk);
+
+		const summary = $('summary');
+		summary.textContent = 'Ball #' + nonce + ' goes ' + ball.path.map(bit => bit ? 'R' : 'L').join('') + ', lands in slot ' + ball.slot + ' and pays ';
+		const multiplier = document.createElement('strong');
+		multiplier.textContent = multiplierText(ball.multiplierInTenths) + 'x';
+		const note = document.createElement('span');
+		note.className = 'note';
+		note.textContent = 'Slot 0 is the far left and slot ' + rows + ' the far right: the slot is the number of rows the ball went right (' + ball.slot + ' of ' + rows + '). '
+			+ $('risk').selectedOptions[0].textContent + ' risk, ' + rows + ' rows.';
+		summary.append(multiplier, note);
+	}
+
+	/* ───────────────────────────  Event wiring  ─────────────────────────── */
+	$('pf-form').addEventListener('submit', e => { e.preventDefault(); update(); });
+	$('pf-form').addEventListener('input',  update);   // live refresh
+	window.addEventListener('load',         update);   // auto-run for bookmarked URLs
+</script>
+
+</body>
+</html>
