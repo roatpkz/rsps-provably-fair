@@ -9,9 +9,9 @@ material = clientSeed + ":" + serverSeed [+ ":" + nonce]
 hash     = SHA‑256(material)
 ```
 
-The hash (or a slice of it) is turned into an unsigned integer and mapped to a card, roll, mine, boxing, or flower according to the game‑specific rules below.
+The hash (or a slice of it) is turned into an unsigned integer and mapped to a card, roll, mine, ball path, boxing, or flower according to the game‑specific rules below.
 
-> **Quick adoption:** The heavy lifting here is already done, just import the helpers, implement them to your wager logic, and you’re provably fair. In practice, most RSPS owners can ship a verifiable Flower-Poker / Dice / Mines / Blackjack release in a single afternoon with this release, giving players cryptographic proof that every deal, roll, or plant is 100% tamper-free.
+> **Quick adoption:** The heavy lifting here is already done, just import the helpers, implement them to your wager logic, and you’re provably fair. In practice, most RSPS owners can ship a verifiable Flower-Poker / Dice / Mines / Plinko / Blackjack release in a single afternoon with this release, giving players cryptographic proof that every deal, roll, drop, or plant is 100% tamper-free.
 ---
 
 ## ✨ What’s inside?
@@ -21,6 +21,7 @@ The hash (or a slice of it) is turned into an unsigned integer and mapped to a c
 | `ProvablyFairBlackjack` | 8-deck Blackjack shoe | 1 … 416 cards | `clientSeed`, `serverSeed`, **`nonce`** | [blackjack.html](https://cdn.roatpkz.com/provably_fair/blackjack.html) |
 | `ProvablyFairDice` | 0.00 – 100 % roll | 0 … 10 000 → 0.00 – 100.00 % | `clientSeed`, `serverSeed`, **`nonce`** | [dice.html](https://cdn.roatpkz.com/provably_fair/dice.html) |
 | `ProvablyFairMines` | 5 × 5 Mines grid | BitSet (25) | `clientSeed`, `serverSeed`, **`nonce`**, `mineCount` | [mines.html](https://cdn.roatpkz.com/provably_fair/mines.html) |
+| `ProvablyFairPlinko` | 8 – 16 row Plinko board | 1 hash bit per row → slot 0 … rows | `clientSeed`, `serverSeed`, **`nonce`**, `rows` | [plinko.html](https://cdn.roatpkz.com/provably_fair/plinko.html) |
 | `ProvablyFairFlowerPoker` | Flower Poker | Infinite flower stream | `player1Seed`, `player2Seed`, `serverSeed` | [flowerpoker.html](https://cdn.roatpkz.com/provably_fair/flowerpoker.html) |
 | `ProvablyFairBoxing` | Boxing | Infinite 0-16 hit stream | `player1Seed`, `player2Seed`, `serverSeed`, **`hit #`** | [boxing.html](https://cdn.roatpkz.com/provably_fair/boxing.html) |
 
@@ -65,6 +66,23 @@ BitSet layout = ProvablyFairMines.generateLayout(
 System.out.println(layout);              // bit = true → mine
 ```
 
+### Plinko – drop a ball down 16 rows of pegs
+```java
+int rows = 16;                           // 8 – 16 rows of pegs
+int path = ProvablyFairPlinko.pathBits(
+        "RoatClientSeed01", "k3Jf9-Qx2LmZ7pWd", 1, rows);   // 1 = nonce (ball #)
+
+/* one hash bit per row, bit r = row r: 1 → right, 0 → left */
+StringBuilder way = new StringBuilder();
+for (int row = 0; row < rows; row++) {
+    way.append(((path >> row) & 1) == 1 ? 'R' : 'L');
+}
+System.out.println(way);                 // RRRLLLLRLLRLLRRR
+
+int slot = ProvablyFairPlinko.slot(path); // times it went right → 8 (0 = far left, 16 = far right)
+// payout = bet × your pay table's multiplier for that risk, row count and slot
+```
+
 ### Flower Poker – reproduce an entire match
 ```java
 String p1 = "aliceSeed";
@@ -98,7 +116,7 @@ int player2Hit = hitForPlayer(2, 0, p1, p2, srv);
 2. **Post-deal : disclose the raw server seed for audit**  
    - When the hand ends, reveal `server_seed_plain`.  
    - Immediately rotate to a brand-new `server_seed_plain` and publish its hash for the next round.
-   - If it's not player vs player (Flower Poker or Boxing), then increase the nonce after every game.
+   - If it's not player vs player (Flower Poker or Boxing), then increase the nonce after every game. In Plinko every ball is a game, so each ball gets the next nonce.
 
 3. **Self-audit guide for players**  
    - Copy `client_seed(s)` + `server_seed_plain` + `nonce` from the game log.  
@@ -113,7 +131,7 @@ int player2Hit = hitForPlayer(2, 0, p1, p2, srv);
 * **Unpredictability** – the server keeps its seed secret until the round ends.
 * **Client Control** – players can change their seed at any time before wagering.
 * **Transparency** – the server publishes `SHA‑256(serverSeed)` **before** play so it cannot swap seeds to force an outcome.
-* **Nonces** – used when the same two seeds produce multiple rounds (e.g. successive Blackjack hands).
+* **Nonces** – used when the same two seeds produce multiple rounds (e.g. successive Blackjack hands or Plinko balls).
 
 ---
 ## 📝 List of RuneScape Private Servers with Provably Fair Gambling
