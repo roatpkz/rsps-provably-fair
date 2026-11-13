@@ -5,7 +5,7 @@ A lightweight, **MIT‑licensed** collection of Java helpers that add _provably�
 Every outcome is locked in by cryptographic hashes so that **anyone** holding the relevant seeds can reproduce the exact same result offline and confirm nothing was tampered with.
 
 ```
-material = clientSeed + ":" + serverSeed [+ ":" + nonce]
+material = clientSeed + ":" + serverSeed [+ ":" + nonce]
 hash     = SHA‑256(material)
 ```
 
@@ -28,7 +28,7 @@ The hash (or a slice of it) is turned into an unsigned integer and mapped to a c
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start
 
 ```bash
 # 1. copy the src folder into your server project
@@ -38,9 +38,9 @@ import server.util.provably_fair.ProvablyFairDice;
 
 ---
 
-## 🛠️ Code Examples
+## 🛠️ Code Examples
 
-### Blackjack – shuffle a fresh 8‑deck shoe
+### Blackjack – shuffle a fresh 8‑deck shoe
 ```java
 String clientSeed = "alice44434434"; // set by the user
 String serverSeed = "f3d6..."; // revealed after the session, hashed version must be visible to player before the round starts
@@ -51,21 +51,21 @@ int[] shoe = ProvablyFairBlackjack.shuffleShoe(clientSeed, serverSeed, hand);
 System.out.println(Arrays.toString(Arrays.copyOf(shoe, 10)));
 ```
 
-### Dice – percentage roll (0.00 – 100.00 %)
+### Dice – percentage roll (0.00 – 100.00 %)
 ```java
 double pct = ProvablyFairDice.rollPercentage("client_seed", "server_seed", 42);
 System.out.printf("You rolled %.2f%%", pct);
 ```
 
-### Mines – place 10 mines on a 5×5 board
+### Mines – place 10 mines on a 5×5 board
 ```java
 BitSet layout = ProvablyFairMines.generateLayout(
         "alice", "f3d6...", 1234, 10);   // 10 = mineCount
 
-System.out.println(layout);              // bit = true → mine
+System.out.println(layout);              // bit = true → mine
 ```
 
-### Flower Poker – reproduce an entire match
+### Flower Poker – reproduce an entire match
 ```java
 String p1 = "aliceSeed";
 String p2 = "bobSeed";
@@ -75,7 +75,7 @@ Flower firstFlowerP1 = ProvablyFairFlowerPoker.flowerAtPlayer1(p1, p2, srv, 0);
 Flower[] firstHandP2 = ProvablyFairFlowerPoker.firstNPlayer2(p1, p2, srv, 5);
 ```
 
-### Boxing – deal damage from 0-16
+### Boxing – deal damage from 0-16
 ```java
 String p1 = "smoothieSeed";
 String p2 = "maxSeed";
@@ -107,12 +107,12 @@ int player2Hit = hitForPlayer(2, 0, p1, p2, srv);
 
 ---
 
-## 🏗️ How It Works (technical)
+## 🏗️ How It Works (technical)
 
 * **Determinism** – SHA‑256 is a one‑way function; equal input → equal output.
 * **Unpredictability** – the server keeps its seed secret until the round ends.
 * **Client Control** – players can change their seed at any time before wagering.
-* **Transparency** – the server publishes `SHA‑256(serverSeed)` **before** play so it cannot swap seeds to force an outcome.
+* **Transparency** – the server publishes `SHA‑256(serverSeed)` **before** play so it cannot swap seeds to force an outcome.
 * **Nonces** – used when the same two seeds produce multiple rounds (e.g. successive Blackjack hands).
 
 ---
@@ -124,10 +124,10 @@ int player2Hit = hitForPlayer(2, 0, p1, p2, srv);
 
 If you’ve implemented provably fair gambling on your server, please email **admin@roatpkz.com** with details so we can add your server to this list.
 
-## 🪪 License
+## 🪪 License
 
 ```
-MIT License – © Roat Pkz  https://roatpkz.com
+MIT License – © Roat Pkz  https://roatpkz.com
 ```
 
 Pull requests and audits welcome!
